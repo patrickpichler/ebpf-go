@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -576,6 +577,47 @@ func TestCORERelocation(t *testing.T) {
 						// should match.
 						t.Errorf("offset %d: local %v doesn't match target %d (kind %s)", offset, fixup.local, fixup.target, fixup.kind)
 					}
+				}
+			})
+		}
+	})
+}
+
+func TestCORERelocationDoNotModifyImmutableTypes(t *testing.T) {
+	testutils.Files(t, testutils.Glob(t, "testdata/*.elf"), func(t *testing.T, file string) {
+		rd, err := os.Open(file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rd.Close()
+
+		spec, extInfos, err := LoadSpecAndExtInfosFromReader(rd)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if extInfos == nil {
+			t.Skip("No ext_infos")
+		}
+
+		immCpy := spec.imm.copy()
+
+		for section := range extInfos.funcInfos {
+			name := strings.TrimPrefix(section, "socket/")
+			t.Run(name, func(t *testing.T) {
+				var relos []*CORERelocation
+				for _, reloInfo := range extInfos.relocationInfos[section].infos {
+					relos = append(relos, reloInfo.relo)
+				}
+
+				_, _ = CORERelocate(relos, []*Spec{spec}, spec.imm.byteOrder, spec.TypeID)
+
+				if !reflect.DeepEqual(*immCpy, spec.imm) {
+					t.Fatalf("immutable types have been modified:\n%s",
+						cmp.Diff(*immCpy, spec.imm,
+							cmp.Exporter(func(t reflect.Type) bool {
+								return true
+							})))
 				}
 			})
 		}

@@ -268,9 +268,9 @@ func CORERelocate(relos []*CORERelocation, targets []*Spec, bo binary.ByteOrder,
 			namedTypeIDs := target.imm.namedTypes[essentialName]
 			targetTypes = slices.Grow(targetTypes, len(namedTypeIDs))
 			for _, id := range namedTypeIDs {
-				typ, found := target.imm.typeByID(id)
-				if !found {
-					return nil, fmt.Errorf("look up type with ID %d (first ID is %d): %w", id, target.imm.firstTypeID, ErrNotFound)
+				typ, err := target.immutableTypeByID(id)
+				if err != nil {
+					return nil, err
 				}
 
 				targetTypes = append(targetTypes, typ)

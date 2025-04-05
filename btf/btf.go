@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"reflect"
+	"slices"
 	"sync"
 
 	"github.com/cilium/ebpf/internal"
@@ -48,6 +49,33 @@ type immutableTypes struct {
 	// Byte order of the types. This affects things like struct member order
 	// when using bitfields.
 	byteOrder binary.ByteOrder
+}
+
+func (s *immutableTypes) copy() *immutableTypes {
+	if s == nil {
+		return nil
+	}
+
+	ret := &immutableTypes{}
+
+	ret.types = make([]Type, len(s.types))
+	ret.typeIDs = make(map[Type]TypeID, len(s.typeIDs))
+	for i, t := range s.types {
+		tCpy := t.copy()
+		typeID := s.typeIDs[t]
+
+		ret.types[i] = tCpy
+		ret.typeIDs[tCpy] = typeID
+	}
+
+	ret.namedTypes = make(map[essentialName][]TypeID, len(s.namedTypes))
+	for en, v := range s.namedTypes {
+		ret.namedTypes[en] = slices.Clone(v)
+	}
+
+	ret.byteOrder = s.byteOrder
+
+	return ret
 }
 
 func (s *immutableTypes) typeByID(id TypeID) (Type, bool) {
@@ -573,6 +601,23 @@ func (s *Spec) TypeByID(id TypeID) (Type, error) {
 	}
 
 	return typ, nil
+}
+
+func (s *Spec) immutableTypeByID(id TypeID) (Type, error) {
+	immT, ok := s.imm.typeByID(id)
+	if !ok {
+		return nil, fmt.Errorf("look up type with ID %d (first ID is %d): %w", id, s.imm.firstTypeID, ErrNotFound)
+	}
+
+	s.mu.RLock()
+	cpy, ok := s.copies[immT]
+	s.mu.RUnlock()
+
+	if ok {
+		return cpy, nil
+	}
+
+	return immT, nil
 }
 
 // TypeID returns the ID for a given Type.
